@@ -60,7 +60,8 @@ __global__ void kernelDot(float* a, float* b, float* dest) {
 	}
 
 	if(threadIdx.x == 0) {
-		atomicAdd(dest, tmp[0]);		//work with float?
+		//atomicAdd(dest, tmp[0]);		//work with float?
+		*dest = tmp[0];
 	}
 }
 
@@ -152,29 +153,29 @@ CG::~CG() {
 
 void CG::build_matrix0() {
 	/* A in non sparse matrix form
-	*
+	*  x = 2, y = -1
 	*	|----------------------|
-	*	|2 1 0 0 0 0 .... 0 0 0|
-	*	|1 2 1 0 0 0 .... 0 0 0|
-	*	|0 1 2 1 0 0 .... 0 0 0|
+	*	|x y 0 0 0 0 .... 0 0 0|
+	*	|y x y 0 0 0 .... 0 0 0|
+	*	|0 y x y 0 0 .... 0 0 0|
 	*	|. .				. .|
 	*	|. .				. .|
 	*	|. .				. .|
-	*	|0 0 0 0 0 0 .... 0 1 2|
+	*	|0 0 0 0 0 0 .... 0 y x|
 	*	|----------------------|
 	*
 	*/
 
 	A[0] = 2;
 	A_col[0] = 0;
-	A[1] = 1;
+	A[1] = -1;
 	A_col[1] = 1;
 
 	uint64_t col = 1;
 	for(uint64_t i = 2; i < A_SIZE - 2; i += 3) {
-		A[i] = 1;
+		A[i] = -1;
 		A[i + 1] = 2;
-		A[i + 2] = 1;
+		A[i + 2] = -1;
 
 		A_col[i] = col;
 		A_col[i + 1] = col + 1;
@@ -182,7 +183,7 @@ void CG::build_matrix0() {
 		col++;
 	}
 
-	A[A_SIZE - 2] = 1;
+	A[A_SIZE - 2] = -1;
 	A_col[A_SIZE - 2] = N - 2;
 	A[A_SIZE - 1] = 2;
 	A_col[A_SIZE - 1] = N - 1;
@@ -260,12 +261,13 @@ int CG::run() {
 
 	dim3 blockDim(THREADS);
 	dim3 gridDim(BLOCKS);
+	dim3 gridDimDot(1);				//Single block only?
 
 	float error;
 	float* swap;
 	iter = 0;
 
-	kernelDot<<<gridDim, blockDim>>>(cudaR, cudaR, cudaRs);		//Single block only?
+	kernelDot<<<gridDimDot, blockDim>>>(cudaR, cudaR, cudaRs);
 	cudaMemcpy(&error, cudaRs, sizeof(float), cudaMemcpyDeviceToHost);
 
 	while(error > TOL && iter < MAX_ITER) {
@@ -274,14 +276,15 @@ int CG::run() {
 		swap = cudaR_prev;
 		cudaR_prev = cudaR;
 		cudaR = swap;
-		kernelDot<<<gridDim, blockDim>>>(cudaR_prev, cudaR_prev, cudaBeta);
-		kernelDot<<<gridDim, blockDim>>>(cudaP, cudaS, cudaAlpha);
+
+		kernelDot<<<gridDimDot, blockDim>>>(cudaR_prev, cudaR_prev, cudaBeta);
+		kernelDot<<<gridDimDot, blockDim>>>(cudaP, cudaS, cudaAlpha);
 		kernelScalar<<<1, 1>>>(cudaAlpha, cudaBeta);
 
 		kernelAlpha<<<gridDim, blockDim>>>(cudaR, cudaR_prev);
 
-		kernelDot<<<gridDim, blockDim>>>(cudaR, cudaR, cudaRs);
-		cudaMemcpy(&error, cudaRs, sizeof(float), cudaMemcpyDeviceToHost);
+		kernelDot<<<gridDimDot, blockDim>>>(cudaR, cudaR, cudaRs);
+		cudaMemcpy(&error, cudaRs, sizeof(float), cudaMemcpyDeviceToHost);		//Need sync?
 
 		kernelScalar<<<1, 1>>>(cudaBeta, cudaRs);
 		kernelBeta<<<gridDim, blockDim>>>(cudaR);
@@ -309,16 +312,16 @@ bool CG::check() {
 
 	copy(B, B + N, r);
 	copy(B, B + N, r_prev);
+	fill(x, x + N, 0);
 
 	while(inner_product(r, r + N, r, 0) > TOL && k < MAX_ITER) {
 		if (k == 0) {
 			copy(r, r + N, p);
-			fill(x, x + N, 0);
 		}
 		else {
 			beta = (float)inner_product(r, r + N, r, 0) / inner_product(r_prev, r_prev + N, r_prev, 0);
 
-			for (int i = 0; i < N; i++){
+			for (uint64_t i = 0; i < N; i++){
 				p[i] = r[i] + beta * p[i];
 			}
 		}
@@ -327,10 +330,10 @@ bool CG::check() {
 		r_prev = r;
 		r = r_swap;
 
-		for (int row_i = 0; row_i < N; row_i++) {
+		for (uint64_t row_i = 0; row_i < N; row_i++) {
 			float sum = 0;
 
-			for(int i = A_row[row_i]; i < A_row[row_i + 1]; row_i++) {
+			for(uint64_t i = A_row[row_i]; i < A_row[row_i + 1]; i++) {
 				sum += A[i] * p[A_col[i]];
 			}
 
@@ -338,9 +341,8 @@ bool CG::check() {
 		}
 
 		alpha = (float)inner_product(r_prev, r_prev + N, r_prev, 0) / inner_product(p, p + N, s, 0);
-		cout << "x";
 
-		for (int i = 0; i < N; i++) {
+		for (uint64_t i = 0; i < N; i++) {
 			x[i] +=  alpha * p[i];
 			r[i] = r_prev[i] - alpha * s[i];
 		}
@@ -350,14 +352,14 @@ bool CG::check() {
 
 	bool result = true;
 
-	for(int i = 0; i < N; i++) {
+	for(uint64_t i = 0; i < N; i++) {
 		if(X[i] != x[i]) {
 			result = false;
 			break;
 		}
 	}
 
-	cout << "\nNumber of iterations: " << k << "\n";
+	cout << "Number of iterations seq: " << k << endl;
 
 	delete[] r;
 	delete[] r_prev;

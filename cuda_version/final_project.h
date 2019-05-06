@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 class CG {
-public:
+private:
 
 	float* A;
 	uint64_t* A_col;
@@ -29,6 +29,8 @@ public:
 
 	uint64_t iter;
 
+public:
+	
 	CG();
 
 	~CG();
