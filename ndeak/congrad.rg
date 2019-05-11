@@ -113,7 +113,8 @@ task CG_iter(is       : ispace(int1d),
 where 
   reads(A.{a,ci,ri}, b), reads writes(x, b, r, r_prev, p, s)
 do
-  beta = inner_product(is, r, r) / inner_product(is, r_prev, r_prev)
+  var inner_r_cur = inner_product(is, r, r)
+  beta = inner_r_cur / inner_product(is, r_prev, r_prev)
 --  c.printf("value of beta is: %.2f, should be 1.0\n", beta)
   for i in is do
     p[i]  =r[i] + beta*p[i]
@@ -126,7 +127,7 @@ do
 --    c.printf("for entry %i, (%.2f, %i, %i)\n", i, A[i].a, A[i].ri, A[i].ci)
   end
 
-  alpha = inner_product(is, r_prev, r_prev) / inner_product(is, p, s)
+  alpha = inner_r_cur / inner_product(is, p, s)
 --  c.printf("alpha is: %.2f\n", alpha)
   for i in is do
 --    c.printf("s[%i] is %.2f\n", i, s[i])
