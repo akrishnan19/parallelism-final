@@ -186,7 +186,7 @@ task toplevel()
   while not converged do
     num_iterations += 1
     err = CG_iter(is, is_nnz, A, x, b, r, r_prev, p, s, alpha, beta, config.matrix_order, config.nnz)
-    c.printf("----- ERROR IS: %11.4f ------\n", err)
+    -- c.printf("----- ERROR IS: %11.4f ------\n", err)
     if (err < config.error_bound) then
       converged = true
     end
