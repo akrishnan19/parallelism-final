@@ -1,0 +1,10 @@
+8:Conjugate gradient converged after 50 iterations in 1.0100 sec
+8:Conjugate gradient converged after 50 iterations in 0.9767 sec
+8:Conjugate gradient converged after 50 iterations in 1.0092 sec
+8:Conjugate gradient converged after 50 iterations in 0.9809 sec
+8:Conjugate gradient converged after 50 iterations in 0.9564 sec
+8:Conjugate gradient converged after 50 iterations in 1.5511 sec
+8:Conjugate gradient converged after 50 iterations in 0.9959 sec
+8:Conjugate gradient converged after 50 iterations in 0.9969 sec
+8:Conjugate gradient converged after 50 iterations in 1.3040 sec
+8:Conjugate gradient converged after 50 iterations in 0.9879 sec

@@ -32,7 +32,7 @@ terra ConGradConfig:initialize_from_command()
 
   self.error_bound = 1e-5
   self.max_iterations = 1000
-  self.matrix_order = 100
+  self.matrix_order = 10000
 
   var args = c.legion_runtime_get_input_args()
   var i = 1

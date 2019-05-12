@@ -93,9 +93,20 @@ do
   return val
 end
 
-task vector_copy()
+task taskone(is      : ispace(int1d),
+	     r       : region(is,double),
+	     beta    : double,
+	     r_prev  : region(is,double),
+	     p       : region(is,double),
+	     i       : uint64)
+	     
+where
+   reads(r), reads writes (p,r_prev)
+   do
+      p[i] = r[i] + beta*p[i]
+      r_prev[i] = r[i]
+   end
 
-end
 
 task CG_iter(is       : ispace(int1d),
              is_nnz   : ispace(int1d),
@@ -116,12 +127,18 @@ do
   var inner_r_cur = inner_product(is, r, r)
   beta = inner_r_cur / inner_product(is, r_prev, r_prev)
 --  c.printf("value of beta is: %.2f, should be 1.0\n", beta)
-  for i in is do
+-- Make this into a new task
+-- __demand(__vectorize)
+    for i in is do
     p[i]  =r[i] + beta*p[i]
     r_prev[i] = r[i] 
 --    c.printf("p[%i] is %.2f\n", i, p[i])
-  end
+     -- taskone(is,r,beta,r_prev,p,i)
+    end
 
+
+-- Make this into a new task
+-- __demand(__vectorize)
   for i in is_nnz do
     s[A[i].ri] += A[i].a * p[A[i].ci]
 --    c.printf("for entry %i, (%.2f, %i, %i)\n", i, A[i].a, A[i].ri, A[i].ci)
@@ -129,6 +146,9 @@ do
 
   alpha = inner_r_cur / inner_product(is, p, s)
 --  c.printf("alpha is: %.2f\n", alpha)
+
+-- Make this into a new task
+-- __demand(__vectorize)
   for i in is do
 --    c.printf("s[%i] is %.2f\n", i, s[i])
     x[i] += alpha*p[i]
