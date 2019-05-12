@@ -6,36 +6,39 @@
 class CG {
 private:
 
-	float* A;
+	double* A;
 	uint64_t* A_col;
 	uint64_t* A_row;
-	float* B;
-	float* X;
+	double* B;
+	double* X;
 
-	float* cudaA;
+	double* cudaA;
 	uint64_t* cudaA_col;
 	uint64_t* cudaA_row;
-	float* cudaB;
-	float* cudaX;
+	double* cudaB;
+	double* cudaX;
 
-	float* cudaR;
-	float* cudaR_prev;
-	float* cudaP;
-	float* cudaS;
+	double* cudaR;
+	double* cudaR_prev;
+	double* cudaP;
+	double* cudaS;
 
-	float* cudaRs;
-	float* cudaAlpha;
-	float* cudaBeta;
+	double* cudaRs;
+	double* cudaAlpha;
+	double* cudaBeta;
 
 	uint64_t iter;
 
+
+	void build_matrix0();
+
+	inline double dot_product(double* a, double* b, uint64_t len);
+
 public:
-	
+
 	CG();
 
 	~CG();
-
-	void build_matrix0();
 
 	void init_host();
 

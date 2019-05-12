@@ -26,11 +26,12 @@ int main() {
 		cout << "Test Passed" << endl;
 	else
 		cout << "Test Failed" << endl;
+	cout << endl;
 
 #endif //CHECK
 
 	cout << "Number of iterations: " << iter << endl;
-	cout << duration.count() << " ms" << endl; 
+	cout << "Execution time: " << duration.count() << " ms" << endl; 
 
 	delete cg;
 	return 0;

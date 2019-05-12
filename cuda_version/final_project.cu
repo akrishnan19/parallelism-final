@@ -6,34 +6,37 @@
 #include "final_project.h"
 #include <stdint.h>
 #include <iostream>
-#include <numeric>
+#include <chrono>
 
-#define N 1000
+#define N 100
 #define A_SIZE 3*N-2
-#define MAX_ITER 5000
-#define TOL .00001
+#define MAX_ITER 2
+#define TOL 1e-5
+#define ERROR 5
 
 #define THREADS 128
 #define BLOCKS 4
+#define DOT_BLOCKS 1
 #define TID threadIdx.x+blockDim.x*blockIdx.x
 #define STRIDE blockDim.x*gridDim.x
 
 using namespace std;
+using namespace std::chrono; 
 
 struct GlobalConstants {
 
-	float* A;			// Compressed sparse row matrix
+	double* A;			// Compressed sparse row matrix
 	uint64_t* A_col;	// Column index for entries in A
 	uint64_t* A_row;	// Prefix sum of non-zero elements in each row of A
-	float* B;
-	float* X;
+	double* B;
+	double* X;
 
-	float* P;
-	float* S;
+	double* P;
+	double* S;
 
-	float* Rs;
-	float* Alpha;
-	float* Beta;
+	double* Rs;
+	double* Alpha;
+	double* Beta;
 };
 
 __constant__ GlobalConstants cuParams;
@@ -41,26 +44,26 @@ __constant__ GlobalConstants cuParams;
 
 
 
-__global__ void kernelDot(float* a, float* b, float* dest) {
+__global__ void kernelDot(double* a, double* b, double* dest) {
 
-	__shared__ float tmp[THREADS];
+	__shared__ double tmp[THREADS];
 
-	float temp = 0;
+	double temp = 0;
 	for(uint64_t i = TID; i < N; i += STRIDE) {
 		temp += a[i] * b[i];
 	}
 	tmp[threadIdx.x] = temp;
 
-	__syncthreads();
-	for(uint64_t i = THREADS>>1; i != 0; i >>= 1) {
+	for(uint64_t i = THREADS >> 1; i >= 1; i >>= 1) {
+		__syncthreads();
 		if(threadIdx.x < i) {
 			tmp[threadIdx.x] += tmp[threadIdx.x + i];
 		}
-		__syncthreads();
 	}
+	__syncthreads();
 
 	if(threadIdx.x == 0) {
-		//atomicAdd(dest, tmp[0]);		//work with float?
+		//atomicAdd(dest, tmp[0]);		//work with double?
 		*dest = tmp[0];
 	}
 }
@@ -68,7 +71,7 @@ __global__ void kernelDot(float* a, float* b, float* dest) {
 __global__ void kernelMatMul() {
 
 	for(uint64_t i = TID; i < N; i += STRIDE) {
-		float temp = 0;
+		double temp = 0;
 		for(uint64_t k = cuParams.A_row[i]; k < cuParams.A_row[i + 1]; k++) {
 			temp += cuParams.A[k] * cuParams.P[cuParams.A_col[k]];
 		}
@@ -76,13 +79,13 @@ __global__ void kernelMatMul() {
 	}
 }
 
-__global__ void kernelScalar(float* a, float* b) {
+__global__ void kernelScalar(double* a, double* b) {
 
 	if(TID == 0)
 		*(a) = *(b) / *(a);
 }
 
-__global__ void kernelAlpha(float* R, float* R_prev) {	//Seperate this out?
+__global__ void kernelAlpha(double* R, double* R_prev) {	//Seperate this out?
 
 	for(uint64_t i = TID; i < N; i += STRIDE) {
 		cuParams.X[i] += *(cuParams.Alpha) * cuParams.P[i];
@@ -90,7 +93,7 @@ __global__ void kernelAlpha(float* R, float* R_prev) {	//Seperate this out?
 	}
 }
 
-__global__ void kernelBeta(float* R) {
+__global__ void kernelBeta(double* R) {
 
 	for(uint64_t i = TID; i < N; i += STRIDE) {
 		cuParams.P[i] = R[i] - *(cuParams.Beta) * cuParams.P[i];
@@ -153,7 +156,7 @@ CG::~CG() {
 
 void CG::build_matrix0() {
 	/* A in non sparse matrix form
-	*  x = 2, y = -1
+	*
 	*	|----------------------|
 	*	|x y 0 0 0 0 .... 0 0 0|
 	*	|y x y 0 0 0 .... 0 0 0|
@@ -165,17 +168,19 @@ void CG::build_matrix0() {
 	*	|----------------------|
 	*
 	*/
+	double x = 2;
+	double y = -1;
 
-	A[0] = 2;
+	A[0] = x;
 	A_col[0] = 0;
-	A[1] = -1;
+	A[1] = y;
 	A_col[1] = 1;
 
-	uint64_t col = 1;
+	uint64_t col = 0;
 	for(uint64_t i = 2; i < A_SIZE - 2; i += 3) {
-		A[i] = -1;
-		A[i + 1] = 2;
-		A[i + 2] = -1;
+		A[i] = y;
+		A[i + 1] = x;
+		A[i + 2] = y;
 
 		A_col[i] = col;
 		A_col[i + 1] = col + 1;
@@ -183,9 +188,9 @@ void CG::build_matrix0() {
 		col++;
 	}
 
-	A[A_SIZE - 2] = -1;
+	A[A_SIZE - 2] = y;
 	A_col[A_SIZE - 2] = N - 2;
-	A[A_SIZE - 1] = 2;
+	A[A_SIZE - 1] = x;
 	A_col[A_SIZE - 1] = N - 1;
 
 	A_row[0] = 0;
@@ -205,41 +210,41 @@ void CG::build_matrix0() {
 
 void CG::init_host() {
 
-	A = new float[A_SIZE]();
+	A = new double[A_SIZE]();
 	A_col = new uint64_t[A_SIZE]();
 	A_row = new uint64_t[N + 1]();
-	B = new float[N]();
-	X = new float[N]();
+	B = new double[N]();
+	X = new double[N]();
 
 	build_matrix0();
 }
 
 void CG::init_dev() {
 	
-	cudaMalloc(&cudaA, sizeof(float) * A_SIZE);
+	cudaMalloc(&cudaA, sizeof(double) * A_SIZE);
 	cudaMalloc(&cudaA_col, sizeof(uint64_t) * A_SIZE);
 	cudaMalloc(&cudaA_row, sizeof(uint64_t) * (N + 1));
-	cudaMalloc(&cudaB, sizeof(float) * N);
-	cudaMalloc(&cudaX, sizeof(float) * N);
+	cudaMalloc(&cudaB, sizeof(double) * N);
+	cudaMalloc(&cudaX, sizeof(double) * N);
 
-	cudaMalloc(&cudaR, sizeof(float) * N);
-	cudaMalloc(&cudaR_prev, sizeof(float) * N);
-	cudaMalloc(&cudaP, sizeof(float) * N);
-	cudaMalloc(&cudaS, sizeof(float) * N);
+	cudaMalloc(&cudaR, sizeof(double) * N);
+	cudaMalloc(&cudaR_prev, sizeof(double) * N);
+	cudaMalloc(&cudaP, sizeof(double) * N);
+	cudaMalloc(&cudaS, sizeof(double) * N);
 
-	cudaMalloc(&cudaRs, sizeof(float));
-	cudaMalloc(&cudaAlpha, sizeof(float));
-	cudaMalloc(&cudaBeta, sizeof(float));
+	cudaMalloc(&cudaRs, sizeof(double));
+	cudaMalloc(&cudaAlpha, sizeof(double));
+	cudaMalloc(&cudaBeta, sizeof(double));
 
-	cudaMemcpy(cudaA, A, sizeof(float) * A_SIZE, cudaMemcpyHostToDevice);
+	cudaMemcpy(cudaA, A, sizeof(double) * A_SIZE, cudaMemcpyHostToDevice);
 	cudaMemcpy(cudaA_col, A_col, sizeof(uint64_t) * A_SIZE, cudaMemcpyHostToDevice);
 	cudaMemcpy(cudaA_row, A_row, sizeof(uint64_t) * (N + 1), cudaMemcpyHostToDevice);
-	cudaMemcpy(cudaB, B, sizeof(float) * N, cudaMemcpyHostToDevice);
-	cudaMemcpy(cudaX, X, sizeof(float) * N, cudaMemcpyHostToDevice);
+	cudaMemcpy(cudaB, B, sizeof(double) * N, cudaMemcpyHostToDevice);
+	cudaMemcpy(cudaX, X, sizeof(double) * N, cudaMemcpyHostToDevice);
 
-	cudaMemcpy(cudaR, cudaB, sizeof(float) * N, cudaMemcpyDeviceToDevice);
-	cudaMemcpy(cudaR_prev, cudaB, sizeof(float) * N, cudaMemcpyDeviceToDevice);
-	cudaMemcpy(cudaP, cudaB, sizeof(float) * N, cudaMemcpyDeviceToDevice);
+	cudaMemcpy(cudaR, cudaB, sizeof(double) * N, cudaMemcpyDeviceToDevice);
+	cudaMemcpy(cudaR_prev, cudaB, sizeof(double) * N, cudaMemcpyDeviceToDevice);
+	cudaMemcpy(cudaP, cudaB, sizeof(double) * N, cudaMemcpyDeviceToDevice);
 
 	GlobalConstants params;
 	params.A = cudaA;
@@ -261,14 +266,14 @@ int CG::run() {
 
 	dim3 blockDim(THREADS);
 	dim3 gridDim(BLOCKS);
-	dim3 gridDimDot(1);				//Single block only?
+	dim3 gridDimDot(DOT_BLOCKS);
 
-	float error;
-	float* swap;
+	double error;
+	double* swap;
 	iter = 0;
 
 	kernelDot<<<gridDimDot, blockDim>>>(cudaR, cudaR, cudaRs);
-	cudaMemcpy(&error, cudaRs, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&error, cudaRs, sizeof(double), cudaMemcpyDeviceToHost);
 
 	while(error > TOL && iter < MAX_ITER) {
 		kernelMatMul<<<gridDim, blockDim>>>();
@@ -284,7 +289,7 @@ int CG::run() {
 		kernelAlpha<<<gridDim, blockDim>>>(cudaR, cudaR_prev);
 
 		kernelDot<<<gridDimDot, blockDim>>>(cudaR, cudaR, cudaRs);
-		cudaMemcpy(&error, cudaRs, sizeof(float), cudaMemcpyDeviceToHost);		//Need sync?
+		cudaMemcpy(&error, cudaRs, sizeof(double), cudaMemcpyDeviceToHost);
 
 		kernelScalar<<<1, 1>>>(cudaBeta, cudaRs);
 		kernelBeta<<<gridDim, blockDim>>>(cudaR);
@@ -292,34 +297,45 @@ int CG::run() {
 		iter++;
 	}
 
-	cudaMemcpy(X, cudaX, sizeof(float) * N, cudaMemcpyDeviceToHost);
+	cudaMemcpy(X, cudaX, sizeof(double) * N, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
 
 	return iter;
+}
+
+inline double CG::dot_product(double* a, double* b, uint64_t len) {
+
+	double sum = 0;
+	for(uint64_t i = 0; i < len; i++) {
+		sum += a[i] * b[i];
+	}
+	return sum;
 }
 
 bool CG::check() {
 
 	int k = 0;
 
-	float* r = new float[N]();
-	float* r_prev = new float[N]();
-	float* p = new float[N]();
-	float* s = new float[N]();
-	float* x = new float[N]();
-	float* r_swap;
-	float alpha, beta;
+	double* r = new double[N]();
+	double* r_prev = new double[N]();
+	double* p = new double[N]();
+	double* s = new double[N]();
+	double* x = new double[N]();
+	double* r_swap;
+	double alpha, beta;
 
 	copy(B, B + N, r);
 	copy(B, B + N, r_prev);
 	fill(x, x + N, 0);
 
-	while(inner_product(r, r + N, r, 0) > TOL && k < MAX_ITER) {
+	auto start = high_resolution_clock::now(); 
+
+	while(dot_product(r, r, N) > TOL && k < MAX_ITER) {
 		if (k == 0) {
 			copy(r, r + N, p);
 		}
 		else {
-			beta = (float)inner_product(r, r + N, r, 0) / inner_product(r_prev, r_prev + N, r_prev, 0);
+			beta = (double)dot_product(r, r, N) / dot_product(r_prev, r_prev, N);
 
 			for (uint64_t i = 0; i < N; i++){
 				p[i] = r[i] + beta * p[i];
@@ -331,16 +347,14 @@ bool CG::check() {
 		r = r_swap;
 
 		for (uint64_t row_i = 0; row_i < N; row_i++) {
-			float sum = 0;
-
+			double sum = 0;
 			for(uint64_t i = A_row[row_i]; i < A_row[row_i + 1]; i++) {
 				sum += A[i] * p[A_col[i]];
 			}
-
 			s[row_i] = sum;
 		}
 
-		alpha = (float)inner_product(r_prev, r_prev + N, r_prev, 0) / inner_product(p, p + N, s, 0);
+		alpha = (double)dot_product(r_prev, r_prev, N) / dot_product(p, s, N);
 
 		for (uint64_t i = 0; i < N; i++) {
 			x[i] +=  alpha * p[i];
@@ -350,16 +364,21 @@ bool CG::check() {
 		k++;
 	}
 
+	auto stop = high_resolution_clock::now(); 
+	auto duration = duration_cast<microseconds>(stop - start);
+
 	bool result = true;
 
 	for(uint64_t i = 0; i < N; i++) {
-		if(X[i] != x[i]) {
+		if(X[i] > x[i] + ERROR || X[i] < x[i] - ERROR) {
 			result = false;
-			break;
+			//break;
 		}
+		cout << X[i] << " | " << x[i] << endl;
 	}
 
-	cout << "Number of iterations seq: " << k << endl;
+	cout << "Number of iterations sequential: " << k << endl;
+	cout << "Execution time sequential: " << duration.count() << " ms" << endl; 
 
 	delete[] r;
 	delete[] r_prev;
