@@ -68,7 +68,7 @@ __global__ void kernelDotPartial(double* a, double* b) {
 	}
 }
 
-__global__ void kernelDotSum(double* a, double* b, double* dest) {
+__global__ void kernelDotSum(double* dest) {
 
 	__shared__ double tmp[DOT_BLOCKS];
 
@@ -292,7 +292,7 @@ void CG::init_dev() {
 inline void CG::cuda_dot_product(double* a, double* b, double* dest) {
 
 	kernelDotPartial<<<BLOCKS, THREADS>>>(a, b);
-	kernelDotSum<<<1, DOT_BLOCKS>>>(a, b, dest);
+	kernelDotSum<<<1, DOT_BLOCKS>>>(dest);
 }
 
 int CG::run() {
@@ -357,7 +357,7 @@ double CG::check() {
 	copy(B, B + N, r_prev);
 	fill(x, x + N, 0);
 
-	auto start = high_resolution_clock::now(); 
+	auto start = high_resolution_clock::now();
 
 	while(dot_product(r, r, N) > TOL && k < MAX_ITER) {
 		if (k == 0) {
