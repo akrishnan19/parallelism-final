@@ -22,6 +22,7 @@ private:
 	double* cudaR_prev;
 	double* cudaP;
 	double* cudaS;
+	double* cudaD;
 
 	double* cudaRs;
 	double* cudaAlpha;
@@ -31,6 +32,8 @@ private:
 
 
 	void build_matrix0();
+
+	inline void cuda_dot_product(double* a, double* b, double* dest);
 
 	inline double dot_product(double* a, double* b, uint64_t len);
 
@@ -46,7 +49,7 @@ public:
 
 	int run();
 
-	bool check();
+	double check();
 };
 
 #endif //__FINAL_PROJECT_H__
