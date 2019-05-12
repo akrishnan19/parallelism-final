@@ -4,7 +4,7 @@
 #include "final_project.h"
 
 using namespace std;
-using namespace std::chrono; 
+using namespace std::chrono;
 
 #define CHECK
 
@@ -21,8 +21,9 @@ int main() {
 	auto duration = duration_cast<microseconds>(stop - start);
 
 #ifdef CHECK
-	bool correct = cg->check();
-	if(correct)
+	double seq_time = cg->check();
+	cout << "Speed-up: " << seq_time / (double)duration.count() << endl;
+	if(seq_time != 0)
 		cout << "Test Passed" << endl;
 	else
 		cout << "Test Failed" << endl;

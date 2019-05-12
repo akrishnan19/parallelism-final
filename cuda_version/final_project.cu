@@ -8,15 +8,15 @@
 #include <iostream>
 #include <chrono>
 
-#define N 100
+#define N 100000
 #define A_SIZE 3*N-2
-#define MAX_ITER 5000
+#define MAX_ITER 50000
 #define TOL 1e-5
-#define ERROR 5
+#define ERROR 1e-5
 
-#define THREADS 128
-#define BLOCKS 4
-#define DOT_BLOCKS 1
+#define THREADS 512
+#define BLOCKS (N+THREADS-1)/THREADS
+#define DOT_BLOCKS 256							// Needs to be power of 2 >= BLOCKS
 #define TID threadIdx.x+blockDim.x*blockIdx.x
 #define STRIDE blockDim.x*gridDim.x
 
@@ -33,6 +33,7 @@ struct GlobalConstants {
 
 	double* P;
 	double* S;
+	double* D;
 
 	double* Rs;
 	double* Alpha;
@@ -44,7 +45,7 @@ __constant__ GlobalConstants cuParams;
 
 
 
-__global__ void kernelDot(double* a, double* b, double* dest) {
+__global__ void kernelDotPartial(double* a, double* b) {
 
 	__shared__ double tmp[THREADS];
 
@@ -63,7 +64,29 @@ __global__ void kernelDot(double* a, double* b, double* dest) {
 	__syncthreads();
 
 	if(threadIdx.x == 0) {
-		//atomicAdd(dest, tmp[0]);		//work with double?
+		cuParams.D[blockIdx.x] = tmp[0];
+	}
+}
+
+__global__ void kernelDotSum(double* a, double* b, double* dest) {
+
+	__shared__ double tmp[DOT_BLOCKS];
+
+	double temp = 0;
+	if(threadIdx.x < BLOCKS) {
+		temp = cuParams.D[threadIdx.x];
+	}
+	tmp[threadIdx.x] = temp;
+
+	for(uint64_t i = DOT_BLOCKS >> 1; i >= 1; i >>= 1) {
+		__syncthreads();
+		if(threadIdx.x < i) {
+			tmp[threadIdx.x] += tmp[threadIdx.x + i];
+		}
+	}
+	__syncthreads();
+
+	if(threadIdx.x == 0) {
 		*dest = tmp[0];
 	}
 }
@@ -81,11 +104,11 @@ __global__ void kernelMatMul() {
 
 __global__ void kernelScalar(double* a, double* b) {
 
-	if(TID == 0)
+	if(threadIdx.x == 0)
 		(*a) = (*b) / (*a);
 }
 
-__global__ void kernelAlpha(double* R, double* R_prev) {	//Seperate this out?
+__global__ void kernelAlpha(double* R, double* R_prev) {
 
 	for(uint64_t i = TID; i < N; i += STRIDE) {
 		cuParams.X[i] += (*(cuParams.Alpha)) * cuParams.P[i];
@@ -120,6 +143,7 @@ CG::CG() {
 	cudaR_prev = NULL;
 	cudaP = NULL;
 	cudaS = NULL;
+	cudaD = NULL;
 
 	cudaRs = NULL;
 	cudaAlpha = NULL;
@@ -147,6 +171,7 @@ CG::~CG() {
 		cudaFree(cudaR_prev);
 		cudaFree(cudaP);
 		cudaFree(cudaS);
+		cudaFree(cudaD);
 
 		cudaFree(cudaRs);
 		cudaFree(cudaAlpha);
@@ -231,6 +256,7 @@ void CG::init_dev() {
 	cudaMalloc(&cudaR_prev, sizeof(double) * N);
 	cudaMalloc(&cudaP, sizeof(double) * N);
 	cudaMalloc(&cudaS, sizeof(double) * N);
+	cudaMalloc(&cudaD, sizeof(double) * BLOCKS);
 
 	cudaMalloc(&cudaRs, sizeof(double));
 	cudaMalloc(&cudaAlpha, sizeof(double));
@@ -255,6 +281,7 @@ void CG::init_dev() {
 
 	params.P = cudaP;
 	params.S = cudaS;
+	params.D = cudaD;
 
 	params.Rs = cudaRs;
 	params.Alpha = cudaAlpha;
@@ -262,37 +289,39 @@ void CG::init_dev() {
 	cudaMemcpyToSymbol(cuParams, &params, sizeof(GlobalConstants));
 }
 
-int CG::run() {
+inline void CG::cuda_dot_product(double* a, double* b, double* dest) {
 
-	dim3 blockDim(THREADS);
-	dim3 gridDim(BLOCKS);
-	dim3 gridDimDot(DOT_BLOCKS);
+	kernelDotPartial<<<BLOCKS, THREADS>>>(a, b);
+	kernelDotSum<<<1, DOT_BLOCKS>>>(a, b, dest);
+}
+
+int CG::run() {
 
 	double error;
 	double* swap;
 	iter = 0;
 
-	kernelDot<<<gridDimDot, blockDim>>>(cudaR, cudaR, cudaRs);
+	cuda_dot_product(cudaR, cudaR, cudaRs);
 	cudaMemcpy(&error, cudaRs, sizeof(double), cudaMemcpyDeviceToHost);
 
 	while(error > TOL && iter < MAX_ITER) {
-		kernelMatMul<<<gridDim, blockDim>>>();
+		kernelMatMul<<<BLOCKS, THREADS>>>();
 
 		swap = cudaR_prev;
 		cudaR_prev = cudaR;
 		cudaR = swap;
 
-		kernelDot<<<gridDimDot, blockDim>>>(cudaR_prev, cudaR_prev, cudaBeta);
-		kernelDot<<<gridDimDot, blockDim>>>(cudaP, cudaS, cudaAlpha);
+		cuda_dot_product(cudaR_prev, cudaR_prev, cudaBeta);
+		cuda_dot_product(cudaP, cudaS, cudaAlpha);
 		kernelScalar<<<1, 1>>>(cudaAlpha, cudaBeta);
 
-		kernelAlpha<<<gridDim, blockDim>>>(cudaR, cudaR_prev);
+		kernelAlpha<<<BLOCKS, THREADS>>>(cudaR, cudaR_prev);
 
-		kernelDot<<<gridDimDot, blockDim>>>(cudaR, cudaR, cudaRs);
+		cuda_dot_product(cudaR, cudaR, cudaRs);
 		cudaMemcpy(&error, cudaRs, sizeof(double), cudaMemcpyDeviceToHost);
 
 		kernelScalar<<<1, 1>>>(cudaBeta, cudaRs);
-		kernelBeta<<<gridDim, blockDim>>>(cudaR);
+		kernelBeta<<<BLOCKS, THREADS>>>(cudaR);
 
 		iter++;
 	}
@@ -312,7 +341,7 @@ inline double CG::dot_product(double* a, double* b, uint64_t len) {
 	return sum;
 }
 
-bool CG::check() {
+double CG::check() {
 
 	int k = 0;
 
@@ -372,9 +401,8 @@ bool CG::check() {
 	for(uint64_t i = 0; i < N; i++) {
 		if(X[i] > x[i] + ERROR || X[i] < x[i] - ERROR) {
 			result = false;
-			//break;
+			break;
 		}
-		cout << X[i] << " | " << x[i] << endl;
 	}
 
 	cout << "Number of iterations sequential: " << k << endl;
@@ -386,5 +414,7 @@ bool CG::check() {
 	delete[] s;
 	delete[] x;
 
-	return result;
+	if(result)
+		return duration.count();
+	return 0;
 }
