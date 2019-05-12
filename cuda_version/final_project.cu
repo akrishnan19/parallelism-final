@@ -10,7 +10,7 @@
 
 #define N 100
 #define A_SIZE 3*N-2
-#define MAX_ITER 2
+#define MAX_ITER 5000
 #define TOL 1e-5
 #define ERROR 5
 
@@ -82,21 +82,21 @@ __global__ void kernelMatMul() {
 __global__ void kernelScalar(double* a, double* b) {
 
 	if(TID == 0)
-		*(a) = *(b) / *(a);
+		(*a) = (*b) / (*a);
 }
 
 __global__ void kernelAlpha(double* R, double* R_prev) {	//Seperate this out?
 
 	for(uint64_t i = TID; i < N; i += STRIDE) {
-		cuParams.X[i] += *(cuParams.Alpha) * cuParams.P[i];
-		R[i] = R_prev[i] - *(cuParams.Alpha) * cuParams.S[i];
+		cuParams.X[i] += (*(cuParams.Alpha)) * cuParams.P[i];
+		R[i] = R_prev[i] - (*(cuParams.Alpha)) * cuParams.S[i];
 	}
 }
 
 __global__ void kernelBeta(double* R) {
 
 	for(uint64_t i = TID; i < N; i += STRIDE) {
-		cuParams.P[i] = R[i] - *(cuParams.Beta) * cuParams.P[i];
+		cuParams.P[i] = R[i] + (*(cuParams.Beta)) * cuParams.P[i];
 	}
 }
 
