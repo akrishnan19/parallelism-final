@@ -1,0 +1,186 @@
+\usepackage{templates/beamerthemekitbase}
+
+
+\setbeamertemplate{title page}
+{
+\thispagestyle{empty}
+
+%middle block with name of institute
+%\begin{textblock*}{\paperwidth}(1mm,46mm)
+%\begin{pgfpicture}{0mm}{0mm}{\paperwidth-2mm}{6mm}
+%	\color{black!50}
+%	\pgfpathrectangle{\pgfpoint{0mm}{0mm}}{\pgfpoint{\paperwidth-2mm}{6mm}}
+%	\pgfusepath{fill}
+%	\pgftext[at=\pgfpoint{5mm}{3mm},left,center]{\textcolor{white}{\footnotesize\uppercase\expandafter{\insertinstitute}}}
+%\end{pgfpicture}
+%\end{textblock*}
+
+%elements on title page
+
+%KIT logo
+%\begin{textblock*}{40mm}(6mm,5mm)
+
+\begin{textblock*}{120mm}(48mm,3mm)
+\includegraphics[width=30mm]{logos/primaryhorizontal} 
+%\includegraphics[width=30mm]{logos/images} 
+\end{textblock*}
+
+%%institute logo
+%\begin{textblock*}{20mm}(104mm,4mm)
+%\includegraphics[width=20mm]{logos/\@titlelogo} 
+%\end{textblock*}
+
+%title
+\begin{textblock*}{120mm}(6mm,20mm)
+\begin{beamercolorbox}[wd=118mm,ht=14mm,dp=3mm,left]{white}%
+\large\textbf{\inserttitle}
+\end{beamercolorbox}
+\end{textblock*}
+
+%subtitle
+\begin{textblock*}{120mm}(6mm,40mm)
+\insertsubtitle
+\end{textblock*}
+
+%author
+\begin{textblock*}{120mm}(6mm,50mm)
+\insertauthor~\\
+\vspace{0.1cm}
+\footnotesize{\insertinstitute}
+\end{textblock*}
+
+%legal KIT text
+%\begin{textblock*}{80mm}[0,1](6mm,94.5mm)
+%\fontsize{6pt}{6pt}\selectfont
+%Bisetti research group
+%\end{textblock*}
+
+%\begin{textblock*}{16mm}(90mm,90mm)
+%\fontsize{8pt}{8pt}\selectfont
+%\bfseries
+%\textcolor{white}{
+%	\href{http://www.kaust.edu.sa}{www.kaust.edu.sa}
+%}
+%\end{textblock*}
+
+% title image
+
+\begin{textblock*}{\paperwidth}(75mm,50mm)
+\hspace{1pt}
+\vspace{3pt}
+\includegraphics[height=40mm]{\@titleimage}
+%\begin{overpic}[width=124mm,height=38mm]{\@titleimage}
+%\put(10,0){
+%	%mask curve for lower left corner of title image
+%	\begin{pgfpicture}{0mm}{0mm}{3mm}{3mm}
+%		\pgfpathqmoveto{0mm}{0mm}
+%		\pgfpathlineto{\pgfpoint{3mm}{0mm}}
+%		\pgfpathlineto{\pgfpoint{3mm}{1mm}}
+%
+%		{\pgfsetcornersarced{\pgfpoint{2mm}{2mm}} 
+%		\pgfpathlineto{\pgfpoint{1mm}{1mm}}
+%		\pgfpathlineto{\pgfpoint{1mm}{3mm}}}
+%
+%		\pgfpathmoveto{\pgfpoint{1mm}{3mm}}
+%		\pgfpathlineto{\pgfpoint{0mm}{3mm}}
+%		\pgfpathlineto{\pgfpoint{0mm}{0mm}}
+%		\pgfpathclose
+%
+%		\color{white}
+%		\pgfusepath{fill}
+%	\end{pgfpicture}
+%}
+%\end{overpic}
+\end{textblock*}
+
+}
+
+%background for pages
+%CH: for plain frames
+\newlength{\kitbottom}
+\usebackgroundtemplate{
+	\setlength{\kitbottom}{\ifbeamer@plainframe1mm\else4mm\fi}%
+\begin{pgfpicture}{0mm}{0mm}{\paperwidth}{\paperheight}
+
+	{\pgfsetcornersarced{\pgfpoint{2mm}{2mm}}
+	\pgfpathmoveto{\pgfpoint{\paperwidth-1mm}{\kitbottom}}
+	\pgfpathlineto{\pgfpoint{1mm}{\kitbottom}}
+	\pgfpathlineto{\pgfpoint{1mm}{\paperheight-1mm}}}
+
+	{\pgfsetcornersarced{\pgfpoint{2mm}{2mm}}
+	\pgfpathmoveto{\pgfpoint{1mm}{\paperheight-1mm}}
+	\pgfpathlineto{\pgfpoint{\paperwidth-1mm}{\paperheight-1mm}}
+	\pgfpathlineto{\pgfpoint{\paperwidth-1mm}{\kitbottom}}}
+
+	\color{white}
+	\pgfusepath{fill}
+
+\end{pgfpicture}%
+}
+
+%%%%     %background for pages
+%%%%     %CH: for plain frames
+%%%%     \newlength{\kitbottom}
+%%%%     \usebackgroundtemplate{
+%%%%     	\setlength{\kitbottom}{\ifbeamer@plainframe1mm\else9mm\fi}%
+%%%%     \begin{pgfpicture}{0mm}{0mm}{\paperwidth}{\paperheight}
+%%%%     
+%%%%     	{\pgfsetcornersarced{\pgfpoint{2mm}{2mm}}
+%%%%     	\pgfpathmoveto{\pgfpoint{\paperwidth-1mm}{\kitbottom}}
+%%%%     	\pgfpathlineto{\pgfpoint{1mm}{\kitbottom}}
+%%%%     	\pgfpathlineto{\pgfpoint{1mm}{\paperheight-1mm}}}
+%%%%     
+%%%%     	{\pgfsetcornersarced{\pgfpoint{2mm}{2mm}}
+%%%%     	\pgfpathmoveto{\pgfpoint{1mm}{\paperheight-1mm}}
+%%%%     	\pgfpathlineto{\pgfpoint{\paperwidth-1mm}{\paperheight-1mm}}
+%%%%     	\pgfpathlineto{\pgfpoint{\paperwidth-1mm}{\kitbottom}}}
+%%%%     
+%%%%     	\color{white}
+%%%%     	\pgfusepath{fill}
+%%%%     
+%%%%     \end{pgfpicture}%
+%%%%     }
+
+%frametitle
+\setbeamertemplate{frametitle}
+{
+\vspace{2mm} %\hspace*{-4mm}
+\vbox{\hsize=6.5cm\bfseries\insertframetitle}
+%\vbox{\hsize=8.5cm\bfseries\insertframetitle}
+
+\begin{textblock*}{100mm}(95mm,3mm)
+%\includegraphics[width=18mm]{logos/ut_rwth_kaust_logo}
+%\begin{textblock*}{60mm}(70mm,3mm)
+%\includegraphics[width=18mm]{logos/ut_rwth_kaust_logo}
+\includegraphics[width=25mm]{logos/primaryhorizontal}
+\end{textblock*}
+
+}
+
+\setbeamertemplate{headline}
+{
+}
+
+\setbeamertemplate{navigation symbols}{}
+
+%footer
+\setbeamertemplate{footline}
+{
+\vskip.4mm
+
+%\begin{beamercolorbox}[ht=2.4mm, dp=3mm]{section in head/foot}
+%	%include mini frame navigation
+%        \insertnavigation{\paperwidth}
+%\end{beamercolorbox}
+
+
+\begin{beamercolorbox}[wd=0.7\textwidth,ht=2.2mm,dp=1.5mm,leftskip=1.3em,rightskip=.5em]{author in head/foot}%
+\usebeamerfont{author in head/foot}%
+\hspace{2.5pt}\insertshorttitle
+\end{beamercolorbox}%
+\vspace*{-4mm}\hspace*{0.7\textwidth}%
+\begin{beamercolorbox}[wd=0.3\textwidth,ht=2.2mm,dp=1.5mm,left,leftskip=.5em]{title in head/foot}%
+\usebeamerfont{title in head/foot}%
+\hfill~\insertshortdate \hspace{30pt}\insertframenumber{}/\inserttotalframenumber
+\end{beamercolorbox}%
+}
