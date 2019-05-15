@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH -o myjob.%j.out
+#SBATCH -J myjob
+#SBATCH -p skx-normal
+#SBATCH -A EE382N-20
+#SBATCH -t 01:00:00
+
+module load gcc cmake
+echo "Master Host = "`hostname`
+echo "PWD_DIR: "`pwd`
+
+rm *.dat
+../regent.py congrad.rg -fvectorize 0 -e 1e-5 -c 1000 -n 100 -p 2
