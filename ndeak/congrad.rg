@@ -70,6 +70,7 @@ task initialize_vectors(is       : ispace(int1d),
 where 
   reads writes (x, b, r, r_prev, p, s)
 do
+  __demand(__vectorize)
   for i in is do
     x[i] = 0.0
     b[i] = 1.0
@@ -82,73 +83,60 @@ end
 
 task inner_product(is     : ispace(int1d),
                    v1     : region(is, double),
-                   v2     : region(is, double))
+                   v2     : region(ispace(int1d), double))
 where 
   reads(v1, v2)
 do
   var val : double = 0.0
+  
+  __demand(__vectorize)
   for i in is do
     val += v1[i] * v2[i]
   end
+
   return val
 end
 
-task taskone(is      : ispace(int1d),
-	     r       : region(is,double),
-	     beta    : double,
-	     r_prev  : region(is,double),
-	     p       : region(is,double),
-	     i       : uint64)
-	     
-where
-   reads(r), reads writes (p,r_prev)
-   do
-      p[i] = r[i] + beta*p[i]
-      r_prev[i] = r[i]
-   end
-
-
-task CG_iter(is       : ispace(int1d),
-             is_nnz   : ispace(int1d),
-             A        : region(Entry),
-             x        : region(is,double),
-             b        : region(is,double),
-             r        : region(is,double),
-             r_prev   : region(is,double),
-             p        : region(is,double),
-             s        : region(is,double),
-             alpha    : double,
-             beta     : double,
-             ord      : uint64,
-             nnz      : uint64)
+task CG_dir(is       : ispace(int1d),
+            r        : region(ispace(int1d),double),
+            r_prev   : region(ispace(int1d),double),
+            p        : region(ispace(int1d),double),
+            beta     : double)
 where 
-  reads(A.{a,ci,ri}, b), reads writes(x, b, r, r_prev, p, s)
+  reads(r), reads writes(r_prev, p)
 do
-  var inner_r_cur = inner_product(is, r, r)
-  beta = inner_r_cur / inner_product(is, r_prev, r_prev)
---  c.printf("value of beta is: %.2f, should be 1.0\n", beta)
--- Make this into a new task
--- __demand(__vectorize)
-    for i in is do
-    p[i]  =r[i] + beta*p[i]
+  __demand(__vectorize)
+  for i in is do
+    p[i]  = r[i] + beta*p[i]
     r_prev[i] = r[i] 
---    c.printf("p[%i] is %.2f\n", i, p[i])
-     -- taskone(is,r,beta,r_prev,p,i)
-    end
+  end
+end
 
-
--- Make this into a new task
--- __demand(__vectorize)
+task CG_mtv(is       : ispace(int1d),
+            is_nnz   : ispace(int1d),
+            A        : region(Entry),
+            p        : region(is,double),
+            s        : region(is,double))
+where 
+  reads(A.{a,ci,ri}, p), reads writes(s)
+do
   for i in is_nnz do
     s[A[i].ri] += A[i].a * p[A[i].ci]
 --    c.printf("for entry %i, (%.2f, %i, %i)\n", i, A[i].a, A[i].ri, A[i].ci)
   end
+end
 
-  alpha = inner_r_cur / inner_product(is, p, s)
---  c.printf("alpha is: %.2f\n", alpha)
-
--- Make this into a new task
--- __demand(__vectorize)
+task CG_iter(is       : ispace(int1d),
+             x        : region(ispace(int1d),double),
+             r        : region(ispace(int1d),double),
+             r_prev   : region(ispace(int1d),double),
+             p        : region(ispace(int1d),double),
+             s        : region(ispace(int1d),double),
+             alpha    : double)
+where 
+  reads(p, r_prev), reads writes(x, r, s)
+do
+  __demand(__vectorize)
   for i in is do
 --    c.printf("s[%i] is %.2f\n", i, s[i])
     x[i] += alpha*p[i]
@@ -156,9 +144,6 @@ do
     s[i] = 0.0
   end
 
-  var err = inner_product(is, r, r)
-
-  return err
 end
 
 task toplevel()
@@ -170,6 +155,7 @@ task toplevel()
   c.printf("* Error Bound      : %11g *\n",   config.error_bound)
   c.printf("* Max # Iterations : %11u *\n",   config.max_iterations)
   c.printf("* Matrix Order : %11u *\n",   config.matrix_order)
+  c.printf("* Parallelism : %11u *\n",   config.parallelism)
   c.printf("**********************************\n")
 
   -- Creating index spaces for problem iterations
@@ -196,6 +182,18 @@ task toplevel()
   var alpha = 0.0
   var beta = 0.0
   var err = 1000.0
+  var temp1 = 0.0
+  var temp2 = 0.0
+
+  -- Creating equal vector partitions
+  var c0 = ispace(int1d, config.parallelism)
+
+  var px = partition(equal, x, c0)
+  var pb = partition(equal, b, c0)
+  var pr = partition(equal, r, c0)
+  var pr_prev = partition(equal, r_prev, c0)
+  var pp = partition(equal, p, c0)
+  var ps = partition(equal, s, c0)
 
   -- Initialize the page graph from a file
   initialize_matrix(A, is_int, config.matrix_order, config.nnz)
@@ -206,8 +204,42 @@ task toplevel()
   var ts_start = c.legion_get_current_time_in_micros()
   while not converged do
     num_iterations += 1
-    err = CG_iter(is, is_nnz, A, x, b, r, r_prev, p, s, alpha, beta, config.matrix_order, config.nnz)
-    -- c.printf("----- ERROR IS: %11.4f ------\n", err)
+
+    temp1 = 0.0
+    temp2 = 0.0
+    for c in c0 do
+      temp1 += inner_product(pr[c].ispace, pr[c], pr[c])
+      temp2 += inner_product(pr_prev[c].ispace, pr_prev[c], pr_prev[c])
+    end
+    beta = temp1 / temp2
+--    beta = inner_product(is, r, r) / inner_product(is, r_prev, r_prev)
+
+    for c in c0 do
+      CG_dir(pr[c].ispace, pr[c], pr_prev[c], pp[c], beta)
+    end
+--    CG_dir(is, r, r_prev, p, beta)
+
+    CG_mtv(is, is_nnz, A, p, s)
+
+    temp1 = 0.0
+    temp2 = 0.0
+    for c in c0 do
+      temp1 += inner_product(pr_prev[c].ispace, pr_prev[c], pr_prev[c])
+      temp2 += inner_product(pp[c].ispace, pp[c], ps[c])
+    end
+    alpha = temp1 / temp2
+--    alpha = inner_product(is, r_prev, r_prev) / inner_product(is, p, s)
+
+    for c in c0 do
+      CG_iter(px[c].ispace, px[c], pr[c], pr_prev[c], pp[c], ps[c], alpha)
+    end  
+
+    err = 0.0
+    for c in c0 do
+      err += inner_product(pr[c].ispace, pr[c], pr[c])
+    end
+
+    c.printf("----- ERROR IS: %11.4f ------\n", err)
     if (err < config.error_bound) then
       converged = true
     end
