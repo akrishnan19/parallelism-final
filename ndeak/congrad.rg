@@ -70,7 +70,7 @@ task initialize_vectors(is       : ispace(int1d),
 where 
   reads writes (x, b, r, r_prev, p, s)
 do
-  __demand(__vectorize)
+--  __demand(__vectorize)
   for i in is do
     x[i] = 0.0
     b[i] = 1.0
@@ -81,32 +81,40 @@ do
   end
 end
 
-task inner_product(is     : ispace(int1d),
-                   v1     : region(is, double),
-                   v2     : region(ispace(int1d), double))
+task inner_product1(v1     : region(ispace(int1d), double))
 where 
-  reads(v1, v2)
+  reads (v1)
 do
-  var val : double = 0.0
-  
-  __demand(__vectorize)
-  for i in is do
-    val += v1[i] * v2[i]
+  var sum = 0.0
+  for i in v1.ispace do
+    sum += v1[i] * v1[i]
   end
 
-  return val
+  return sum
 end
 
-task CG_dir(is       : ispace(int1d),
-            r        : region(ispace(int1d),double),
+task inner_product2(v1     : region(ispace(int1d), double),
+                    v2     : region(ispace(int1d), double))
+where 
+  reads (v1, v2)
+do
+  var sum = 0.0
+  for i in v1.ispace do
+    sum += v1[i] * v2[i]
+  end
+
+  return sum
+end
+
+task CG_dir(r        : region(ispace(int1d),double),
             r_prev   : region(ispace(int1d),double),
             p        : region(ispace(int1d),double),
             beta     : double)
 where 
   reads(r), reads writes(r_prev, p)
 do
-  __demand(__vectorize)
-  for i in is do
+--  __demand(__vectorize)
+  for i in r.ispace do
     p[i]  = r[i] + beta*p[i]
     r_prev[i] = r[i] 
   end
@@ -126,8 +134,7 @@ do
   end
 end
 
-task CG_iter(is       : ispace(int1d),
-             x        : region(ispace(int1d),double),
+task CG_iter(x        : region(ispace(int1d),double),
              r        : region(ispace(int1d),double),
              r_prev   : region(ispace(int1d),double),
              p        : region(ispace(int1d),double),
@@ -136,14 +143,20 @@ task CG_iter(is       : ispace(int1d),
 where 
   reads(p, r_prev), reads writes(x, r, s)
 do
-  __demand(__vectorize)
-  for i in is do
---    c.printf("s[%i] is %.2f\n", i, s[i])
+--  __demand(__vectorize)
+  for i in x.ispace do
     x[i] += alpha*p[i]
-    r[i] = r_prev[i] - alpha*s[i]
-    s[i] = 0.0
   end
 
+--  __demand(__vectorize)
+  for i in r.ispace do
+    r[i] = r_prev[i] - alpha*s[i]
+  end
+
+--  __demand(__vectorize)
+  for i in s.ispace do
+    s[i] = 0.0
+  end
 end
 
 task toplevel()
@@ -195,6 +208,10 @@ task toplevel()
   var pp = partition(equal, p, c0)
   var ps = partition(equal, s, c0)
 
+  -- Creating inner product temp vars
+--  var temp1 = region(c0, double)
+--  var temp2 = region(c0, double)
+
   -- Initialize the page graph from a file
   initialize_matrix(A, is_int, config.matrix_order, config.nnz)
   initialize_vectors(is, x, b, r, r_prev, p, s, config.matrix_order)
@@ -207,36 +224,46 @@ task toplevel()
 
     temp1 = 0.0
     temp2 = 0.0
+    __demand(__parallel)
     for c in c0 do
-      temp1 += inner_product(pr[c].ispace, pr[c], pr[c])
-      temp2 += inner_product(pr_prev[c].ispace, pr_prev[c], pr_prev[c])
+      temp1 += inner_product1(pr[c])
+    end
+
+    __demand(__parallel)
+    for c in c0 do
+      temp2 += inner_product1(pr_prev[c])
     end
     beta = temp1 / temp2
---    beta = inner_product(is, r, r) / inner_product(is, r_prev, r_prev)
 
+    __demand(__parallel)
     for c in c0 do
-      CG_dir(pr[c].ispace, pr[c], pr_prev[c], pp[c], beta)
+      CG_dir(pr[c], pr_prev[c], pp[c], beta)
     end
---    CG_dir(is, r, r_prev, p, beta)
 
     CG_mtv(is, is_nnz, A, p, s)
 
     temp1 = 0.0
     temp2 = 0.0
+    __demand(__parallel)
     for c in c0 do
-      temp1 += inner_product(pr_prev[c].ispace, pr_prev[c], pr_prev[c])
-      temp2 += inner_product(pp[c].ispace, pp[c], ps[c])
+      temp1 += inner_product1(pr_prev[c])
+
+    end
+
+    __demand(__parallel)
+    for c in c0 do
+      temp2 += inner_product2(pp[c], ps[c])
     end
     alpha = temp1 / temp2
---    alpha = inner_product(is, r_prev, r_prev) / inner_product(is, p, s)
 
+    __demand(__parallel)
     for c in c0 do
-      CG_iter(px[c].ispace, px[c], pr[c], pr_prev[c], pp[c], ps[c], alpha)
+      CG_iter(px[c], pr[c], pr_prev[c], pp[c], ps[c], alpha)
     end  
 
     err = 0.0
     for c in c0 do
-      err += inner_product(pr[c].ispace, pr[c], pr[c])
+      err += inner_product1(pr[c])
     end
 
     c.printf("----- ERROR IS: %11.4f ------\n", err)
@@ -247,9 +274,9 @@ task toplevel()
   var ts_stop = c.legion_get_current_time_in_micros()
   c.printf("Conjugate gradient converged after %d iterations in %.4f sec\n",
     num_iterations, (ts_stop - ts_start) * 1e-6)
-  for i in is do
-    c.printf("x[%i] is: %.2f\n", i, x[i])
-  end
+--  for i in is do
+--    c.printf("x[%i] is: %.2f\n", i, x[i])
+--  end
 end
 
 regentlib.start(toplevel)
